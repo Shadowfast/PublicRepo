@@ -1,0 +1,113 @@
+function Get-Restart {
+    Param($PCName)
+    $scriptblock = {get-eventlog -logname System -source USER32 -newest 3 | select-object EventID, MachineName, Message, TimeGenerated}
+    invoke-command -Credential $cred -computername $PCName -scriptblock $scriptblock
+  }
+#---------------------------------------------------------#
+
+#Store creds securely / for PW:
+read-host -assecurestring | convertfrom-securestring | out-file C:\scripts\temp\cred2.txt
+$user = get-content c:\scripts\temp\adm3.txt
+$file = "c:\scripts\temp\cred2.txt"
+$cred = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $user, (get-content $file | ConvertTo-SecureString)
+#---------------------------------------------------------#
+
+function search-locked {
+      Param()
+      search-adaccount -lockedout | select-object SAMAccountName, Name, Enabled | format-list
+  }
+  #---------------------------------------------------------#
+
+function Get-Lockouts {
+  param (
+      [CmdletBinding()]
+      [string]$User,
+      [int]$MaxEvents = 1
+  )
+  $global:Lockouts = Get-WinEvent -LogName security -MaxEvents $MaxEvents -ComputerName DOMAINCONTROLLER -FilterXPath "*[System[EventID=4740] and EventData[Data[@Name='TargetUserName'] and Data = '$User']]" 
+  Write-Host -ForegroundColor Green 'Lockout found, saved to $Lockouts'
+}
+#---------------------------------------------------------#
+
+function start-psremote {
+  Param($RMTPC)
+  psexec -s -d -h \\$rmtpc powershell enable-psremoting -force
+}
+#---------------------------------------------------------#
+
+# Check for open HTTPS WinRM Listener
+$DEVWIN = get-content c:\scripts\notepad\DEV.txt
+$scriptblock = {Get-ChildItem WSMan:\Localhost\listener | Where -Property Keys -eq "Transport=HTTPS" | select-object PSComputername, Keys}
+$DEVresults = foreach($DEVserver in $DEVWIN){
+    if (test-connection $DEVserver -count 1 -Quiet){
+    invoke-command -ComputerName $DEVServer -ScriptBlock $scriptblock
+    }
+    else {
+        Write-Host -ForegroundColor Red @"
+    $DEVServer is not reachable or does not exist.
+"@
+}
+}
+# To remove: Get-ChildItem WSMan:\Localhost\listener | Where -Property Keys -eq "Transport=HTTPS" | Remove-Item -Recurse
+#---------------------------------------------------------#
+
+function get-fqdnip {
+    param(
+        [string]$Computer1)
+if (Test-Connection $Computer1 -Count 1 -Quiet) {
+$myFQDN = (Get-WmiObject win32_computersystem -ComputerName $computer1).DNSHostName+"."+(Get-WmiObject win32_computersystem -ComputerName $computer1).Domain
+$ComputerIP1 = Get-ADComputer $Computer1 -Properties * | Select-Object IPv4Address
+
+[pscustomobject]@{
+Computer_Name = $Computer1
+IPv4 = $ComputerIP1
+FQDN = $myFQDN
+}
+    }
+}
+#---------------------------------------------------------#
+
+# Check network scans folder permissions
+# Run elevated
+Function Check-Scans{
+  Param (
+  [CmdletBinding()]
+  [String]$Scanuser
+  )
+  if(Test-Path "\\Path\To\UserData\Folder\$scanuser"){
+    Write-Host -ForegroundColor Green "Userdata folder exists."
+    }
+  else{
+      Write-Host -ForegroundColor Red "Userdata folder does not exist."
+    }
+    
+  if(Test-Path "\\Path\To\UserData\Folder\$scanuser\scans"){
+    Write-Host -ForegroundColor Green "Scans folder exists with the following permissions:"
+    $acl2 = Get-ACL "\\Path\To\UserData\Folder\$Scanuser\scans"
+    $acl2.GetAccessRules($true, $true, [System.Security.Principal.NTAccount])| Select-Object FileSystemRights, AccessControlType, IdentityReference
+    }
+    else{
+      Write-Host -ForegroundColor Red "Scans folder does not exist."
+    }
+  }
+#---------------------------------------------------------#
+  
+  # Create userdata/scans folder with necessary permissions
+  
+$scanuser = "username"
+$userfolder = "\\Path\To\UserData\Folder\$scanuser\scans"
+New-Item -ItemType Directory -Path $userfolder
+$rule1 = New-Object System.Security.AccessControl.FileSystemAccessRule("DOMAIN\Scanadmins","FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")
+$rule2 = New-Object System.Security.AccessControl.FileSystemAccessRule("DOMAIN\$scanuser","FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")
+$rule3 = New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")
+$rule4 = New-Object System.Security.AccessControl.FileSystemAccessRule("DOMAIN\ScanAdmin","FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")
+$acl = New-Object -TypeName System.Security.AccessControl.DirectorySecurity
+$acl.AddAccessRule($rule1)
+$acl.AddAccessRule($rule2)
+$acl.AddAccessRule($rule3)
+$acl.AddAccessRule($rule4)
+$acl.SetAccessRuleProtection($True, $False)
+####### Above line, $True = isProtected (disables inheritance) // $False = preserveInheritance (removes inherited properties if gained)
+$Acl | Set-Acl -Path $userfolder
+#---------------------------------------------------------#
+
