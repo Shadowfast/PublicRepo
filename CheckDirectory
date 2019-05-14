@@ -1,0 +1,23 @@
+$logFile = 'C:\Scripts\ComputersWithDirectory.log'
+$computers = Get-ADComputer -Filter * -SearchBase 'OU=COMPUTERS,OU=HQ,DC=DCNAME,DC=com' | 
+    Select -Expand Name
+foreach ($computer in $computers)
+{
+    $share = '\\' + $computer + '\C$'
+    if (Test-Path $share)
+    {
+        $folderPath = $share + '\Users\*\FOLDER'
+        $realPath = Get-ChildItem $folderPath | Select -Expand FullName -ErrorAction SilentlyContinue
+        if ($realPath)
+        { 
+            foreach ($path in $realPath)
+            {         
+                Add-Content -Path $logFile -Value "$path exists."
+            }
+        }
+    }
+    else
+    {
+        Add-Content -Path $logFile -Value "$share could not be accessed."
+    }
+}
