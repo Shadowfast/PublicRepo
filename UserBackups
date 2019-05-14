@@ -1,0 +1,52 @@
+function move-user {
+  param (
+      [CmdletBinding()]
+      [string]$UserMigrate,
+      [string]$OldPC,
+      [string]$NewPC
+  )
+foreach ($PC in $NewPC)
+{
+$NewDirVar = '\\' + $NewPC + '\c$\OldPC'
+#$NewDirVar = '\\' + $NewPC + '\c$\Users\' + $UserMigrate
+$OldDirVar = '\\' + $OldPC + '\C$\Users\' + $usermigrate
+$OldDesktop = $OldDirVar + '\Desktop'
+$OldLocal = $OldDirVar + '\AppData\Local\Google\Chrome\User Data\Default'
+$OldRoamingStick = $OldDirVar + '\AppData\Roaming\Microsoft\Sticky Notes'
+$OldRoamingSig = $OldDirVar + '\AppData\Roaming\Microsoft\Signatures'
+$OldDownloads = $OldDirVar + '\Downloads'
+$OldDocuments = $OldDirVar + '\Documents'
+$OldFavorites = $OldDirVar + '\Favorites'
+$newDir = New-Item -ItemType Directory -Path $NewDirVar -Force
+  if (Test-Path $NewDirVar)
+  {
+      $NewDesktop = $NewDirVar + '\Desktop'
+      New-Item -ItemType Directory -Path $NewDesktop
+      $NewLocal = $NewDirVar + '\Local\Default'
+      New-Item -ItemType Directory -Path $NewLocal
+      $NewRoamingStick = $NewDirVar + '\Roaming\Sticky Notes'
+      New-Item -ItemType Directory -Path $NewRoamingStick 
+      $NewRoamingSig = $NewDirVar + '\Roaming\Signatures'
+      New-Item -ItemType Directory -Path $NewRoamingSig 
+      $NewDownloads = $NewDirVar + '\Downloads'
+      New-Item -ItemType Directory -Path $NewDownloads
+      $NewDocuments = $NewDirVar + '\Documents'
+      New-Item -ItemType Directory -Path $NewDocuments
+      $NewFavorites = $NewDirVar + '\Favorites'
+      New-Item -ItemType Directory -Path $NewFavorites
+           if (Test-Path $NewDocuments){
+              robocopy $OldDesktop $NewDesktop /mir /r:3 /w:3
+              robocopy $OldLocal $NewLocal /mir /r:3 /w:3
+              robocopy $OldRoamingStick $NewRoamingStick /mir /r:3 /w:3
+              robocopy $OldRoamingSig $NewRoamingSig /mir /r:3 /w:3
+              robocopy $OldDownloads $NewDownloads /mir /r:3 /w:3
+              robocopy $OldDocuments $NewDocuments /mir /r:3 /w:3
+              robocopy $OldFavorites $NewFavorites /mir /r:3 /w:3
+              # /L switch for a "what-if" in robocopy
+  }
+}
+  else {
+      Write-Host "Access Denied"
+  }
+}
+}
