@@ -1,0 +1,65 @@
+function get-pcinfoCIM {
+  param(
+    [string]$ComputerCIM)
+  if (Test-Connection $ComputerCIM -Count 1 -Quiet) {
+  $newcimsesh = new-cimsession -ComputerName $computerCIM -Credential $cred
+  $ComputerHWCIM = Get-CimInstance -ClassName CIM_ComputerSystem -CimSession $newcimsesh | Select-Object Manufacturer,Model
+  $ComputerCPUCIM = Get-CimInstance -ClassName CIM_Processor -CimSession $newcimsesh | Select-Object DeviceID,Name
+  $ComputerRam_TotalCIM = Get-CimInstance Win32_PhysicalMemoryArray -CimSession $newcimsesh | Select-Object MemoryDevices,MaxCapacity
+  $ComputerRAMCIM = Get-CimInstance -ClassName CIM_PhysicalMemory -CimSession $newcimsesh | Select-Object DeviceLocator,Manufacturer,PartNumber,Capacity,Speed,Tag
+  $sumCIM = ($ComputerRAMCIM.Capacity | Measure-Object -Sum).sum
+  $ComputerRAM_InstalledCIM = "{0:N2}" -f ($sumCIM / 1GB) + " GB"
+  $ComputerDisksCIM = Get-CimInstance -ClassName CIM_LogicalDisk -Filter "DeviceID='C:'" -CimSession $newcimsesh | Select-Object DeviceID,VolumeName,Size,FreeSpace
+  $ComputerDiskTypeCIM = Get-CimInstance MSFT_PhysicalDisk -Namespace Root\Microsoft\Windows\Storage -CimSession $newcimsesh | Select-Object MediaType
+  $ComputerDisksSizeCIM = "{0:N2}" -f ($ComputerDisksCIM.Size / 1GB) + " GB"
+  $ComputerDisksFreeCIM = "{0:N2}" -f ($ComputerDisksCIM.FreeSpace / 1GB) + " GB"
+  $ComputerOS1CIM = Get-CimInstance -ClassName CIM_OperatingSystem -CimSession $newcimsesh | Select-Object Version, OSArchitecture, lastbootuptime
+  $ComputerADCIM = Get-ADComputer $ComputerCIM -Properties * | Select-Object DistinguishedName, IPv4Address, OperatingSystem
+  #Get-CimInstance -ClassName CIM_NetworkAdapter
+  $scriptblockCIM = {get-eventlog -logname System -source USER32 -newest 1 | Where-Object {$_.eventID -eq 1074} | select-object EventID,TimeGenerated}
+  $restartedCIM = invoke-command -Credential $cred -computername $ComputerCIM -scriptblock $scriptblockCIM
+  $LastUpdatedCIM = Get-CimInstance -Class Win32_QuickFixEngineering -CimSession $newcimsesh | Select-Object InstalledOn | Sort-Object 'InstalledOn' -Descending
+
+  switch -Wildcard ($ComputerOS1CIM.Version) {
+      "6.1.7600" { $OSCIM = "Windows 7"; break }
+      "6.1.7601" { $OSCIM = "Windows 7 SP1"; break }
+      "6.2.9200" { $OSCIM = "Windows 8"; break }
+      "6.3.9600" { $OSCIM = "Windows 8.1"; break }
+      "10.0.*" { $OSCIM = "Windows 10"; break }
+      default { $OSCIM = "Unknown Operating System"; break }
+    }
+    switch -Wildcard ($ComputerDiskTypeCIM.MediaType) {
+      "0" { $DISKTYPECIM = "Unspecified"; break }
+      "3" { $DISKTYPECIM = "HDD"; break }
+      "4" { $DISKTYPECIM = "SSD"; break }
+      "5" { $DISKTYPECIM = "SCM"; break }
+      default { $DISKTYPECIM = "Unknown Disk Type"; break }
+    }
+    [pscustomobject]@{
+      Computer_Name = $ComputerCIM
+      Operating_System = $OSCIM
+      Operating_System_FromAD = $ComputerADCIM.OperatingSystem
+      OS_Architecture = $ComputerOS1CIM.OSArchitecture
+      Manufacturer = $ComputerHWCIM.Manufacturer
+      Model = $ComputerHWCIM.Model
+      Processor = $ComputerCPUCIM.Name
+      RAM_Slots = $ComputerRAM_TotalCIM.MemoryDevices
+      Installed_RAM_Slot = $ComputerRAMCIM.DeviceLocator
+      Installed_RAM_Size = $ComputerRAM_InstalledCIM
+      DiskSize = $ComputerDisksSizeCIM
+      FreeSpace = $ComputerDisksFreeCIM
+      Disk_Type = $DISKTYPECIM
+      LastRestartID = $restartedCIM.eventID
+      LastRestartTime = $restartedCIM.TimeGenerated
+      LastBootupTime = $ComputerOS1CIM.lastbootuptime
+      OUs = $ComputerADCIM.DistinguishedName
+      IP = $ComputerADCIM.IPv4Address
+      Last_Updated = $LastUpdatedCIM
+    }
+  }
+  else {
+    Write-Host -ForegroundColor Red @"
+Computer is not reachable or does not exist.
+"@
+}
+}
